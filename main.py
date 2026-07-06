@@ -70,7 +70,6 @@ async def middleware(request: Request, call_next):
 async def ping(request: Request):
 
     request_id = request.headers.get("X-Request-ID")
-
     if not request_id:
         request_id = request.state.request_id
 
@@ -80,5 +79,4 @@ async def ping(request: Request):
     })
 
     response.headers["X-Request-ID"] = request_id
-
     return response
