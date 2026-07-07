@@ -64,6 +64,11 @@ async def middleware(request: Request, call_next):
     return response
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+
 @app.get("/ping")
 async def ping(request: Request):
     return JSONResponse({
