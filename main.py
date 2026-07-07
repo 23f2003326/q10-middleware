@@ -33,21 +33,30 @@ clients = defaultdict(list)
 @app.middleware("http")
 async def request_context_and_rate_limit(request: Request, call_next):
 
-    # Request ID
+    # ---------- Request ID ----------
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
 
-    # Skip rate limit for preflight
+    # ---------- OPTIONS (preflight) ----------
     if request.method == "OPTIONS":
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
 
-    # Rate limit
-    client = request.headers.get("X-Client-Id", "anonymous")
+    # ---------- Per-client rate limit ----------
+    client = request.headers.get("X-Client-Id")
+
+    # If no client id is supplied, don't make everyone share "anonymous".
+    # Give each such request its own temporary bucket.
+    if not client:
+        client = f"anon-{uuid.uuid4()}"
+
     now = time.time()
 
-    clients[client] = [t for t in clients[client] if now - t < WINDOW]
+    clients[client] = [
+        t for t in clients[client]
+        if now - t < WINDOW
+    ]
 
     if len(clients[client]) >= LIMIT:
         response = JSONResponse(
@@ -62,7 +71,6 @@ async def request_context_and_rate_limit(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
-
 
 @app.options("/ping")
 async def ping_options():
