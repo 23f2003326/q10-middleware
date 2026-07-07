@@ -2,7 +2,7 @@ import time
 import uuid
 from collections import defaultdict
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -33,24 +33,21 @@ clients = defaultdict(list)
 @app.middleware("http")
 async def request_context_and_rate_limit(request: Request, call_next):
 
-    # ---------- Request ID ----------
+    # Request ID
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
 
-    # ---------- Skip rate limit for preflight ----------
+    # Skip rate limit for preflight
     if request.method == "OPTIONS":
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
 
-    # ---------- Rate limiting ----------
+    # Rate limit
     client = request.headers.get("X-Client-Id", "anonymous")
     now = time.time()
 
-    clients[client] = [
-        t for t in clients[client]
-        if now - t < WINDOW
-    ]
+    clients[client] = [t for t in clients[client] if now - t < WINDOW]
 
     if len(clients[client]) >= LIMIT:
         response = JSONResponse(
@@ -64,8 +61,12 @@ async def request_context_and_rate_limit(request: Request, call_next):
 
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
-
     return response
+
+
+@app.options("/ping")
+async def ping_options():
+    return Response(status_code=200)
 
 
 @app.get("/")
