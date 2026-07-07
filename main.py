@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 EMAIL = "23f2003326@ds.study.iitm.ac.in"
 
+# Allowed origins
 ALLOWED_ORIGINS = [
     "https://app-lgqxoh.example.com",
     "https://exam.sanand.workers.dev",
@@ -20,24 +21,31 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],  # <-- FIX: lets browser JS read this header
 )
 
+# Rate limit: 10 requests / 10 seconds
 LIMIT = 10
 WINDOW = 10
+
 clients = defaultdict(list)
 
 
 @app.middleware("http")
 async def middleware(request: Request, call_next):
+
     # -------- Request ID (set BEFORE call_next!) --------
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    request.state.request_id = request_id   # ✅ now available inside route handler
+    request.state.request_id = request_id
 
     # -------- Rate Limit --------
     client = request.headers.get("X-Client-Id", "anonymous")
     now = time.time()
 
-    clients[client] = [t for t in clients[client] if now - t < WINDOW]
+    clients[client] = [
+        t for t in clients[client]
+        if now - t < WINDOW
+    ]
 
     if len(clients[client]) >= LIMIT:
         resp = JSONResponse(
@@ -52,6 +60,7 @@ async def middleware(request: Request, call_next):
     # -------- Continue --------
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
+
     return response
 
 
@@ -59,10 +68,12 @@ async def middleware(request: Request, call_next):
 async def ping(request: Request):
     return JSONResponse({
         "email": EMAIL,
-        "request_id": request.state.request_id   # ✅ always set now
+        "request_id": request.state.request_id
     })
 
 
 @app.get("/debug")
 def debug():
-    return {"email_constant": EMAIL}
+    return {
+        "email_constant": EMAIL
+    }
