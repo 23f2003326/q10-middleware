@@ -80,3 +80,9 @@ async def ping(request: Request):
 
     response.headers["X-Request-ID"] = request_id
     return response
+
+@app.get("/debug")
+def debug():
+    return {
+        "email_constant": EMAIL
+    }   
