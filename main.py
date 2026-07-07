@@ -3,12 +3,11 @@ import uuid
 from collections import defaultdict
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 EMAIL = "23f2003326@ds.study.iitm.ac.in"
 
-# Allowed origins
 ALLOWED_ORIGINS = [
     "https://app-lgqxoh.example.com",
     "https://exam.sanand.workers.dev",
@@ -21,10 +20,9 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],  # <-- FIX: lets browser JS read this header
+    expose_headers=["X-Request-ID"],
 )
 
-# Rate limit: 10 requests / 10 seconds
 LIMIT = 10
 WINDOW = 10
 
@@ -32,13 +30,19 @@ clients = defaultdict(list)
 
 
 @app.middleware("http")
-async def middleware(request: Request, call_next):
+async def request_context_and_rate_limit(request: Request, call_next):
 
-    # -------- Request ID (set BEFORE call_next!) --------
+    # ---------- Request ID ----------
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
 
-    # -------- Rate Limit --------
+    # ---------- Skip rate limit for preflight ----------
+    if request.method == "OPTIONS":
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    # ---------- Rate limiting ----------
     client = request.headers.get("X-Client-Id", "anonymous")
     now = time.time()
 
@@ -48,16 +52,15 @@ async def middleware(request: Request, call_next):
     ]
 
     if len(clients[client]) >= LIMIT:
-        resp = JSONResponse(
+        response = JSONResponse(
             status_code=429,
             content={"detail": "Rate limit exceeded"},
         )
-        resp.headers["X-Request-ID"] = request_id
-        return resp
+        response.headers["X-Request-ID"] = request_id
+        return response
 
     clients[client].append(now)
 
-    # -------- Continue --------
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
 
@@ -71,14 +74,17 @@ async def root():
 
 @app.get("/ping")
 async def ping(request: Request):
-    return JSONResponse({
+    return {
         "email": EMAIL,
-        "request_id": request.state.request_id
-    })
+        "request_id": request.state.request_id,
+    }
 
 
 @app.get("/debug")
-def debug():
+async def debug():
     return {
-        "email_constant": EMAIL
+        "email": EMAIL,
+        "limit": LIMIT,
+        "window": WINDOW,
+        "allowed_origins": ALLOWED_ORIGINS,
     }
